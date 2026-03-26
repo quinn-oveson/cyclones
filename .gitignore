@@ -1,0 +1,20 @@
+# --- Python ---
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+
+# --- uv / Packaging ---
+# We keep pyproject.toml and uv.lock, but ignore the build artifacts
+dist/
+build/
+.uv/
+
+# --- Environment/Secrets ---
+.env
+.venv
+
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
