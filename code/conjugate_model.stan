@@ -39,7 +39,21 @@ transformed parameters {
 }
 
 model {
-    
+    // likelihood 
+    W ~ normal(all_mu, sqrt(all_sig2));
+
+    // priors
+    sig2 ~ inv_gamma(alpha, gamma);
+    for (d in 1:D) {
+        Beta[:, d] ~ multi_normal(rep_vector(nu[d], B), diag_matrix(rep_vector(tau2[d], B)));
+    }
+    tau2 ~ inv_gamma(a, lambda);
+
+    // hyperpriors
+    alpha ~ gamma(y_alpha, 1.0/z_alpha);
+    gamma ~ gamma(y_gamma, 1.0/z_gamma);
+    nu ~ multi_normal(rep_vector(0.0, D), diag_matrix(rep_vector(v2, D)));
+    lambda ~ gamma(y_lambda, 1.0/z_lambda);
 }
 
 generated quantities {
