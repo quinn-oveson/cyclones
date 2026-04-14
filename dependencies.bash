@@ -6,3 +6,4 @@ pip install matplotlib
 pip install ipykernel
 pip install pandas
 pip install pymc
+pip install scikit-learn
