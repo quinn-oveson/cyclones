@@ -7,3 +7,4 @@ pip install ipykernel
 pip install pandas
 pip install pymc
 pip install scikit-learn
+pip install jinja2
