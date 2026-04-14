@@ -74,19 +74,21 @@ class CycloneDataSimulator:
         
         # generate max sustained wind speed 
         # normally between 25 and 65 knots 
-        max_wind_sims = np.log(stats.norm.rvs(loc=40., scale=5., size=N_sim))       # log scale!!
+        max_wind_sims = stats.norm.rvs(loc=3.7, scale=0.3, size=N_sim)       # log scale!!
         
         # generate minimum sea pressure
         # generally between 640 and 1000 hPa
-        min_sea_press_sims = np.log(stats.norm.rvs(loc=990, scale=20., size=N_sim)) # log scale!!
+        min_sea_press_sims = stats.norm.rvs(loc=6.88, scale=0.02, size=N_sim) # log scale!!
 
         # generate wind speed gradient
         # subtract normals, one higher than the other
-        wind_grad_sims = np.log(stats.norm.rvs(loc=40., scale=5., size=N_sim)) - np.log(stats.norm.rvs(loc=30, scale=5., size=N_sim))
+        # wind_grad_sims = np.log(stats.norm.rvs(loc=40., scale=5., size=N_sim)) - np.log(stats.norm.rvs(loc=30, scale=5., size=N_sim))
+        wind_grad_sims = stats.norm.rvs(loc=0.3, scale=0.2, size=N_sim)
 
         # Potential Intensity
         # same as max wind speed, just with a higher mean
-        POT_sims = np.log(stats.norm.rvs(loc=100., scale=20., size=N_sim))       # log scale!!
+        # POT_sims = np.log(stats.norm.rvs(loc=100., scale=20., size=N_sim))       # log scale!!
+        POT_sims = stats.norm.rvs(loc=4.6, scale=0.3, size=N_sim)
 
         # stack data into a design matrix
         X = np.vstack([el_nino_sims, max_wind_sims, min_sea_press_sims, wind_grad_sims, POT_sims]).T
