@@ -1,5 +1,461 @@
 import numpy as np 
 from scipy import stats
+from scipy.special import gamma as gamma_func
+
+
+class CycloneSampler:
+
+    def __init__(self, W, X, basins, a, y_alpha, z_alpha, y_gamma, z_gamma, y_lam, z_lam, v2, B):
+        ''' Constructor. Accepts data and hyperparameters and saves these as class attributes.
+
+            Parameters:
+                w (ndarray) : log of Maximum Sustained Wind Speed observations for hours 12-60 of each cyclone 
+                X (ndarray) : design matrix, contains predictor variables for each observation 
+                basins (ndarray) : array of ints/indices indicating the ocean basin for each observation
+                y_alpha (float) : shape parameter for gamma hyperprior (must be positive)
+                z_alpha (float) : scale parameter for gamma hyperprior (must be positive)
+                y_gamma (float) : shape parameter for gamma hyperprior (must be positive)
+                z_gamma (float) : scale parameter for gamma hyperprior (must be positive)
+                kappa (float) : variance parameter for multivariate-normal hyperprior (must be positive)
+                omega (float) : scale parameter for half-Cauchy hyperprior (must be positive)
+                B (int) : the number of unique ocean basins to be modeled
+        '''
+
+        # save data as attributes
+        self.W = W
+        self.X = X
+        self.basins = basins
+
+        # save hyperparameters as attributes
+        self.a = a
+        self.y_alpha = y_alpha 
+        self.z_alpha = z_alpha 
+        self.y_gamma = y_gamma 
+        self.z_gamma = z_gamma 
+        self.y_lam = y_lam 
+        self.z_lam = z_lam
+        self.v2 = v2 
+
+        # save model dimensions as attributes
+        self.N, self.D = X.shape 
+        self.B = B
+
+        # initialize the current state attribute (this needs to be set with starting values in the sampler)
+        self.curr_state = []
+
+        # counter for acceptance rates of M-H sampler
+        self.alpha_accept_count = 0
+    
+
+    def _draw_sig2(self):
+        ''' Draw from the full conditional posterior distribution for the sigma_b^2's.
+
+            Parameters:
+                curr_state (list) : a list containing the current values of all model parameters 
+            Returns: 
+                new_sig2 (ndarray) : an array of length B containing a new draw for variance in each ocean basin
+        '''
+        curr_sig2, curr_Beta, curr_tau2, curr_alpha, curr_gamma, curr_nu, curr_lam = self.curr_state 
+        all_mu = np.array([self.X[i] @ curr_Beta[self.basins[i]] for i in range(self.N)])
+
+        # put this check here just in case 
+        if len(curr_sig2) != self.B:
+            raise ValueError("Number of sigmas should match number of basins!!")
+        
+        new_sig2 = np.empty_like(curr_sig2)
+        for i in range(self.B):
+            
+            # extract data/sufficient stats
+            basin_idx = self.basins == i 
+            basin_mu = all_mu[basin_idx]
+            basin_W = self.W[basin_idx]
+            N_b = np.sum(basin_idx)
+            
+            # draw from full conditional
+            new_sig2[i] = stats.invgamma.rvs(
+                a = curr_alpha + N_b / 2.,
+                scale = curr_gamma + np.sum((basin_W - basin_mu)**2) / 2.
+            )
+    
+        # implement sampler!
+        # new_sig2 = list()
+        # for i in range(len(curr_sig2)):
+        #     basin_w = self.w[self.basins == i]
+        #     basin_x = self.X[self.basins == i]
+        #     N_b = len(basin_data)
+        #     mu = basin_x @ basin_w.T
+        #     sum_vec = (basin_w - mu)**2
+        #     sum_scalar = sum_vec.sum()
+        #     new_sig2.append(stats.invgamma.rvs(curr_alpha + N_b/2, 1/(-curr_gamma + 1/2 * sum_scalar)))
+
+        # new_sig2 = np.array(new_sig2)
+        return new_sig2
+    
+
+    def _draw_Beta(self):
+        ''' Draw from the full conditional posterior distribution for the Beta matrix.
+
+            Parameters:
+                curr_state (list) : a list containing the current values of all model parameters 
+            Returns: 
+                new_Beta (ndarray) : a BxD matrix containing a new draw for regression parameters in each ocean basin
+        '''
+        curr_sig2, curr_Beta, curr_tau2, curr_alpha, curr_gamma, curr_nu, curr_lam = self.curr_state 
+
+        # these are just placeholders. these need to be tuned
+        # MIN_FEASIBLE_BETA = -5
+        # MAX_FEASIBLE_BETA = 5
+        # res = 300
+
+        # N, B, D = self.N, self.B, self.D
+        # new_Beta = curr_Beta
+
+        # for b in range(B):
+        #     basin_W = self.W[self.basins == b]
+        #     basin_X = self.X[self.basins == b, :]
+        #     basin_log_likelihood_func = lambda beta_vect: -1/(2*curr_sig2[b])*np.sum((basin_W - basin_X@beta_vect)**2)
+        #     def log_likelihood(beta_d, d):
+        #             beta_vect = new_Beta[b, :].copy()
+        #             beta_vect[d] = beta_d
+        #             return basin_log_likelihood_func(beta_vect) - (1/(2*curr_tau2[d]))*((beta_d - curr_nu[d])**2)
+        #     for d in range(D):
+        #         possible_vals = np.linspace(MIN_FEASIBLE_BETA, MAX_FEASIBLE_BETA, res)
+        #         log_likelihoods = np.array([log_likelihood(val, d) for val in possible_vals])
+        #         log_likelihoods -= np.max(log_likelihoods) 
+        #         likelihoods = np.exp(log_likelihoods)
+        #         cdf_vect = np.cumsum(likelihoods) / np.sum(likelihoods) 
+        #         decision_draw = np.random.random()
+        #         possible_vals = possible_vals[cdf_vect > decision_draw]
+        #         new_Beta[b, d] = possible_vals[0]
+
+        # conditionally conjugate update:
+        new_Beta = np.empty_like(curr_Beta)
+        for b in range(self.B):
+            # extract data associated with b-th ocean basin
+            basin_data = self.W[self.basins == b]
+            basin_predictors = self.X[self.basins == b]
+
+            # compute posterior parameters 
+            T_inv = np.linalg.inv(np.diag(curr_tau2))       # inverse of prior covariance matrix
+            covar = np.linalg.inv(T_inv + (1./curr_sig2[b]) * (basin_predictors.T @ basin_predictors))
+            mean = covar @ (T_inv @ curr_nu + (1./curr_sig2[b]) * (basin_predictors.T @ basin_data))
+            
+            # draw a new set of regression parameters for the b-th ocean basin
+            new_Beta[b] = stats.multivariate_normal.rvs(mean=mean, cov=covar)
+
+        return new_Beta
+    
+    
+    def _draw_tau2(self):
+        ''' Draw from the full conditional posterior distribution for the tau_d's.
+
+            Parameters:
+                curr_state (list) : a list containing the current values of all model parameters 
+            Returns: 
+                new_tau2 (ndarray) : an array of length D containing a new draw for variance of each regression parameter
+        '''
+        curr_sig2, curr_Beta, curr_tau2, curr_alpha, curr_gamma, curr_nu, curr_lam = self.curr_state 
+    
+        new_tau2 = np.empty_like(curr_tau2)
+        for i in range(self.D):
+            nu_d = curr_nu[i]
+            # beta_row = curr_Beta[i, :]              # should be a column of Beta, not a row
+            beta_col = curr_Beta[:, i]
+            # sanity check 
+            if len(beta_col) != self.B: raise ValueError("Beta column is the wrong shape!")
+
+            # sum_vec = (beta_row - nu_d)**2
+            sum_vec = (beta_col - nu_d)**2
+            sum_scalar = sum_vec.sum()
+            new_tau2[i] = stats.invgamma.rvs(a=self.a + self.B/2., scale=curr_lam[i] + sum_scalar / 2.)
+
+        return new_tau2   
+    
+    
+    def _draw_alpha(self):
+        ''' Draw from the full conditional posterior distribution for alpha.
+
+            Parameters:
+                curr_state (list) : a list containing the current values of all model parameters 
+            Returns: 
+                new_alpha (float) : a new draw for the alpha hyperparameter
+        '''
+        curr_sig2, curr_Beta, curr_tau2, curr_alpha, curr_gamma, curr_nu, curr_lam = self.curr_state 
+
+        def _alpha_log_pdf(input):
+            if input > 0.:
+                return (
+                    self.B * np.log(curr_gamma**input / gamma_func(input)) + 
+                    (-input - 1.) * np.sum(np.log(curr_sig2)) + 
+                    (self.y_alpha - 1.) * np.log(input) - 
+                    (input / self.z_alpha)
+                )
+            else: return -np.inf
+    
+        # METROPOLIS-HASTINGS SAMPLER
+        # if this doesn't work or takes too much effort to tune, we can try a griddy sampler, but that seems inefficient
+        # proposal distribution is normal centered at the current alpha with a generous variance
+
+        # draw from the proposal
+        prop_std = 1.5
+        prop_alpha = stats.norm.rvs(loc=curr_alpha, scale=prop_std)
+        
+        # compute acceptance probability
+        accept_prob = np.exp(
+            (_alpha_log_pdf(prop_alpha) + stats.norm.logpdf(x=curr_alpha, loc=prop_alpha, scale=prop_std)) - 
+            (_alpha_log_pdf(curr_alpha) + stats.norm.logpdf(x=prop_alpha, loc=curr_alpha, scale=prop_std))
+        )
+
+        # decide whether to accept or reject 
+        if stats.binom.rvs(n=1, p=min(1., accept_prob)):
+            self.alpha_accept_count += 1
+            new_alpha = prop_alpha 
+        else:
+            new_alpha = curr_alpha 
+
+        return new_alpha
+
+
+    def _draw_gamma(self):
+        ''' Draw from the full conditional posterior distribution for gamma.
+
+            Parameters:
+                curr_state (list) : a list containing the current values of all model parameters 
+            Returns: 
+                new_gamma (float) : a new draw for the gamma hyperparameter
+        '''
+        curr_sig2, curr_Beta, curr_tau2, curr_alpha, curr_gamma, curr_nu, curr_lam = self.curr_state 
+    
+        # new_gamma = stats.gamma(curr_alpha * self.B, 1/(((curr_sig2)**(-1)).sum() + 1/self.z_gamma))        # missing addition of y_gamma
+        new_gamma = stats.gamma.rvs(
+            a = curr_alpha * self.B + self.y_gamma,
+            scale = 1. / (np.sum(1./curr_sig2) + 1./self.z_gamma)
+        )
+
+        return new_gamma
+
+
+    def _draw_nu(self):
+        ''' Draw from the full conditional posterior distribution for nu.
+
+            Parameters:
+                curr_state (list) : a list containing the current values of all model parameters 
+            Returns: 
+                new_nu (array) : a vector of length D containing new draws of nu for each predictor
+        '''
+        curr_sig2, curr_Beta, curr_tau2, curr_alpha, curr_gamma, curr_nu, curr_lam = self.curr_state
+        
+
+        new_nu = np.empty_like(curr_nu)
+        for i in range(self.D):
+            # covar = (1/self.kappa + self.D/curr_tau2)**(-1)     # should be B instead of D, kappa has been changed to v, tau2 should be indexed
+            covar = (1./self.v2 + self.B/curr_tau2[i])**(-1.)
+            # mu = curr_Beta[:, i].sum()/curr_tau2                # tau2 should be indexed
+            mu = np.sum(curr_Beta[:, i]) / curr_tau2[i]
+            new_nu[i] = stats.norm.rvs(loc=covar * mu, scale=np.sqrt(covar))
+
+        return new_nu
+    
+
+    def _draw_lam(self):
+        ''' Draw from the full conditional posterior distribution for the lambda_d's.
+
+            Parameters:
+                curr_state (list) : a list containing the current values of all model parameters 
+            Returns: 
+                new_lam (ndarray) : a vector of length D containing new draws for lambda for each predictor
+        '''
+        curr_sig2, curr_Beta, curr_tau2, curr_alpha, curr_gamma, curr_nu, curr_lam = self.curr_state 
+    
+        new_lam = np.empty_like(curr_lam)
+        for i in range(self.D):
+            # new_lam[i] = stats.gamma.rvs(self.y_alpha + self.a, 1/(1/curr_tau2[i] + 1/self.z_lambda))        # should use y_lam and z_lam
+            new_lam[i] = stats.gamma.rvs(
+                a = self.y_lam + self.a,
+                scale = 1./(1./curr_tau2[i] + 1/self.z_lam)
+            )
+
+        return new_lam
+    
+    
+    def _sweep(self):
+        ''' Perform one full sweep of MCMC (sample from all full conditionals).
+            Updates the self.curr_state attribute in place with the new draws
+        '''
+
+        # draw from the complete conditional for sig2 
+        self.curr_state[0] = self._draw_sig2()
+
+        # draw from the complete conditional for Beta 
+        self.curr_state[1] = self._draw_Beta()
+
+        # draw from the complete conditional for tau 
+        self.curr_state[2] = self._draw_tau2()
+
+        # draw from the complete conditional for alpha
+        self.curr_state[3] = self._draw_alpha()
+
+        # draw from the complete conditional for gamma
+        self.curr_state[4] = self._draw_gamma()
+
+        # draw from the complete conditional for nu
+        self.curr_state[5] = self._draw_nu()
+
+        # draw from the complete conditional for lambda
+        self.curr_state[6] = self._draw_lam()
+    
+
+    def _log_likelihood(self):
+        ''' Compute and return the log-likelihood of all of the cyclone observations, 
+            given the curr_state parameters.  
+
+            Returns:
+                (float) : the log-likelihood
+        '''
+
+        # extract necessary parameters for likelihood computation 
+        curr_sig2, curr_Beta, curr_tau2, curr_alpha, curr_gamma, curr_nu, curr_lam = self.curr_state 
+        all_sig2 = np.array([curr_sig2[self.basins[i]] for i in range(self.N)])
+        all_mu = np.array([self.X[i] @ curr_Beta[self.basins[i]] for i in range(self.N)])
+
+        # compute and return likelihood
+        return (
+            (-self.N/2.) * np.log(2.*np.pi) -
+            np.sum(np.log(all_sig2)) / 2. - 
+            np.sum((1./all_sig2) * (self.W - all_mu)**2.) / 2. 
+        )
+    
+
+    def _log_posterior_probs(self):
+        ''' This function should evaluate the posterior probability of a parameter draw.
+        '''
+        raise NotImplementedError("Posterior probability computation not implemented!")
+
+
+    def sample(self, n_samples, init_state=None):
+        ''' Use MCMC to draw many samples from the cyclone model posterior. 
+
+            Parameters: 
+                n_samples (int) : number of posterior samples to draw
+            Returns:
+                NOT SURE WHAT THIS WILL RETURN YET, COME BACK TO THIS
+                It will probably save all the draws as attributes rather than returning
+        '''
+
+        # initialize matrices to store posterior parameter draws 
+        self.sig2_draws = np.empty((n_samples, self.B))
+        self.Beta_draws = np.empty((n_samples, self.B, self.D))
+        self.tau2_draws = np.empty((n_samples, self.D))
+        self.alpha_draws = np.empty(n_samples)
+        self.gamma_draws = np.empty(n_samples)
+        self.nu_draws = np.empty((n_samples, self.D))
+        self.lam_draws = np.empty((n_samples, self.D))
+        
+        # initalize arrays to store log-likelihood for each draw
+        self.log_like = np.empty(n_samples)
+
+        # TO DO: initialize an array to store log posterior probability for each draw
+
+        # TO DO: set an starting value for the current state
+        if init_state is None: 
+            raise ValueError("Random initialization of current state not yet implemented! Please provide an initial state for the chain!")
+        else: self.curr_state = init_state
+
+        # MCMC loop 
+        for k in range(n_samples):
+
+            # get a new posterior draw for all parameters 
+            self._sweep()
+
+            # save the draws for each parameter 
+            self.sig2_draws[k] = self.curr_state[0]
+            self.Beta_draws[k] = self.curr_state[1]
+            self.tau2_draws[k] = self.curr_state[2]
+            self.alpha_draws[k] = self.curr_state[3]
+            self.gamma_draws[k] = self.curr_state[4]
+            self.nu_draws[k] = self.curr_state[5] 
+            self.lam_draws[k] = self.curr_state[6]
+
+            # compute and store log-likelihood for current draw
+            self.log_like[k] = self._log_likelihood()
+
+            # TO DO: compute and store log posterior probability for current parameters
+
+    def partial_sample(self, n_samples, params_to_include, init_state=None, start_with_true_vals=True):
+        ''' Use MCMC to draw many samples from the cyclone model posterior. 
+
+            Parameters: 
+                n_samples (int) : number of posterior samples to draw
+            Returns:
+                NOT SURE WHAT THIS WILL RETURN YET, COME BACK TO THIS
+                It will probably save all the draws as attributes rather than returning
+        '''
+
+        # initialize matrices to store posterior parameter draws 
+        self.sig2_draws = np.empty((n_samples, self.B))
+        self.Beta_draws = np.empty((n_samples, self.B, self.D))
+        self.tau2_draws = np.empty((n_samples, self.D))
+        self.alpha_draws = np.empty(n_samples)
+        self.gamma_draws = np.empty(n_samples)
+        self.nu_draws = np.empty((n_samples, self.D))
+        self.lam_draws = np.empty((n_samples, self.D))
+        
+        # initalize arrays to store log-likelihood for each draw
+        self.log_like = np.empty(n_samples)
+
+        # TO DO: initialize an array to store log posterior probability for each draw
+
+        # TO DO: set an starting value for the current state
+        if init_state is None: 
+            raise ValueError("Random initialization of current state not yet implemented! Please provide an initial state for the chain!")
+        else:
+            self.curr_state = init_state
+            if not start_with_true_vals:
+                raise NotImplemented("Haven't made this part yet, but it should change the start values of the ones you want to test")
+        # MCMC loop 
+        for k in range(n_samples):
+
+            # get a new posterior draw for all parameters 
+            if "sig2" in params_to_include:
+                # draw from the complete conditional for sig2 
+                self.curr_state[0] = self._draw_sig2()
+
+            if "Beta" in params_to_include: 
+                # draw from the complete conditional for Beta 
+                self.curr_state[1] = self._draw_Beta()
+
+            if "tau2" in params_to_include: 
+                # draw from the complete conditional for tau 
+                self.curr_state[2] = self._draw_tau2()
+            
+            if "alpha" in params_to_include: 
+                # draw from the complete conditional for alpha
+                self.curr_state[3] = self._draw_alpha()
+
+            if "gamma" in params_to_include: 
+                # draw from the complete conditional for gamma
+                self.curr_state[4] = self._draw_gamma()
+
+            if "nu" in params_to_include: 
+                # draw from the complete conditional for nu
+                self.curr_state[5] = self._draw_nu()
+            
+            if "lam" in params_to_include: 
+                # draw from the complete conditional for lambda
+                self.curr_state[6] = self._draw_lam()
+
+            # save the draws for each parameter 
+            self.sig2_draws[k] = self.curr_state[0]
+            self.Beta_draws[k] = self.curr_state[1]
+            self.tau2_draws[k] = self.curr_state[2]
+            self.alpha_draws[k] = self.curr_state[3]
+            self.gamma_draws[k] = self.curr_state[4]
+            self.nu_draws[k] = self.curr_state[5] 
+            self.lam_draws[k] = self.curr_state[6]
+
+            # compute and store log-likelihood for current draw
+            self.log_like[k] = self._log_likelihood()
+
 
 class CycloneDataSimulator:
     ''' Generate simulated cyclone data according to the specified hierarichical model. 
@@ -95,6 +551,22 @@ class CycloneDataSimulator:
 
         self.X = X
         self.N_sim, self.D = X.shape
+    
+
+    def redraw(self, N_sim):
+        """ Keep the same model parameters, but draw a new/larger dataset.
+        """
+
+        self.generate_X(N_sim)
+
+        # expand mu and sig2 by observation so that the process can be vectorized
+        all_sig2 = np.array([self.sig2[self.basins[i]] for i in range(self.N_sim)])
+        all_mu = np.array([self.X[i] @ self.Beta[self.basins[i]] for i in range(self.N_sim)])
+
+        # draw observations from the likelihood 
+        self.W = stats.norm.rvs(loc=all_mu, scale=np.sqrt(all_sig2))
+
+        return self.W
 
     
     def simulate(self):
