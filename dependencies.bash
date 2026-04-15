@@ -8,3 +8,4 @@ pip install pandas
 pip install pymc
 pip install scikit-learn
 pip install jinja2
+pip install cmdstanpy
