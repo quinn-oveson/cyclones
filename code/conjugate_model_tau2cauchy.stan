@@ -21,16 +21,21 @@ data {
 parameters {
     vector <lower=0> [B] sig2;          // wind speed variances for each basin
     matrix[B, D] Beta;                  // regression parameters
-    vector <lower=0> [D] tau2;          // parameter variances for each predictor
+    //vector <lower=0> [D] tau2;          // parameter variances for each predictor
     real <lower=0> alpha;               // shape parameter for inverse-gamma prior on sig2
     real <lower=0> gamma;               // scale parameter for inverse-gamma prior on sig2
     vector [D] nu;                      // parameter means for each predictor
     vector <lower=0> [D] lambda;        // scale parameter for inverse-gamma prior on tau2
+    vector <lower=0> [D] tau;
 }
 
 transformed parameters {
    vector[N] all_sig2;
    vector[N] all_mu;
+    vector[D] tau2;
+    for(i in 1:D) {
+        tau2[i] = tau[i]^2;
+}
 
    for (i in 1:N) {
     all_sig2[i] = sig2[basins[i]];
@@ -47,7 +52,7 @@ model {
     for (d in 1:D) {
         Beta[:, d] ~ multi_normal(rep_vector(nu[d], B), diag_matrix(rep_vector(tau2[d], B)));
     }
-    tau2 ~ inv_gamma(a, lambda);
+    tau ~ cauchy(a, lambda);
 
     // hyperpriors
     alpha ~ gamma(y_alpha, 1.0/z_alpha);
@@ -57,7 +62,7 @@ model {
 }
 
 generated quantities {
-   vector[N] log_lik;
+    vector[N] log_lik;
     for (i in 1:N){
         log_lik[i] = normal_lpdf(W[i] | all_mu, sqrt(all_sig2));
 }
