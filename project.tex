@@ -26,6 +26,11 @@
 \maketitle
 
 \section{Introduction}
+Cyclones, consisting of hurricanes, typhoons, and other storms caused by systems of low atmospheric pressure, are a yearly hazard to global citizens and the places they live. The ability to detect cyclones early and predict how they will develop is crucial to protecting human life and property.
+
+Our project attempts to use the SHIPS cyclone dataset and a hierarchical statistical model to predict the maximum sustained wind speed 36 hours after a cyclone is first detected. The maximum sustained wind speed is one way to predict the destructiveness of a cyclone, thus providing a way for a model like ours to be used to help predict the need for disaster mitigation.
+
+We set out to determine how five predictive factors contribute to the maximum wind speed and test whether the relationship between the maximum wind speed and these factors is dependent on the ocean basin where it is observed.
 
 \section{Dataset Description}
 
@@ -34,6 +39,75 @@ The Statistical Hurricane Intensity Prediction Scheme (SHIPS) is a model produce
 For the duration of each storm, the dataset reports measurements of climate variables like maximum sustained wind speed (VMAX) and minimum sea pressure (MSLP) at 6 hour intervals. The dataset also includes predictors that have been calculated from atmospheric data. The only such predictor we use in our model is Maximum Potential Intensity (VMPI), which is a function of sea surface temperature (SST) and atmospheric outflow temperature calculated in the method given by Bister and Emmanuel (2002) \cite{bister2002}. From MPI we calculated Intensity Potential (POT) by subtracting the storm’s intensity at 12 hours from its MPI. This feature has been shown to have predictive value \cite{li2018}. We also calculated an approximate intensity gradient from hours 6 to 12 (VGRAD6-12) by subtracting the maximum sustained wind speed at 6 hours from the maximum sustained wind speed at 12 hours and dividing by 6. 
 
 We chose to join the SHIPS dataset with Oceanic Niño Index (ONI) data from the National Weather Service. This index is a three month running average of SST anomalies in the Niño 3.4 region \cite{noaa_oni}. ONI will be interesting to include as a predictor because it is understood to be a positive predictor for cyclone intensity in the central and eastern Pacific basins and a negative predictor for cyclone intensity in the Atlantic basins \cite{bell2014}. The SHIPS dataset reports only the month and year of each storm, so we will predict based on the ONI on the first day of the month of occurrence. 
+
+\section{Bayesian Model Description}
+
+\subsection{Model Variables}
+We wish to calculate the maximum sustained wind speed from 24 to 60 hours after first measurement. Our predictors are as follows:
+\begin{enumerate}
+    \item The maximum sustained wind speed from 0 to 24 hours after first measurement.
+    \item The minimum Sea Level Pressure
+    \item Maximum potential intensity 
+    \item The basin which the storm develops in
+\end{enumerate}
+
+We assume that the basin which the storm develops in will control the parameters governing the model.
+\subsection{Distributions}
+To ensure that the maximum sustained wind speed ($W_i$) is a positive value, we specify the marginal distribution on the log of the wind speed as:
+
+$$\log W_i | \mu_i \sigma_{b_{i}}^2, \sim \mathrm N(\mu_i, \sigma_{b_{i}}^2) $$
+
+Note that in our model specification, the subscript $b$ refers to the set of parameters for a basin. Thus, $\sigma_{b}^2$ is the variance of the maximum sustained wind speed for the $b$th basin.
+
+We take $\mu_i$ to be:
+
+$$\vec{x_i}\vec{\beta_{b_i}}^T$$
+
+Our priors for our latent parameters are as follows:
+
+$$\sigma_{b}^2 |\alpha, \gamma \sim \textrm{Inverse-Gamma}(\alpha, \textrm{scale}=\gamma)$$
+$$\vec{\beta^{(d)}} | \nu_d, \tau_d \sim \textrm{MultivarNormal}(\nu_d \vec{1}, \tau_d^2I_B)$$
+$$\tau_d^2 | \lambda_d \sim \textrm{Inverse-Gamma} (a, \textrm{scale}=\lambda_d)$$
+
+We use inverse-gamma distributions on $\sigma^2$ and $\tau^2$ to ensure that these values are positive.
+
+$$\alpha \sim \textrm{Gamma}(y_{\alpha}, \textrm{scale}=z_{\alpha})$$
+$$\gamma \sim \textrm{Gamma}(y_{\gamma}, \textrm{scale}=z_{\gamma})$$
+$$\nu_d \sim \textrm{MultivarNormal}(\vec{0}, \kappa^2 I_D)$$
+$$\lambda_d \sim \textrm{Gamma} (y_{\lambda}, \textrm{scale} = z_{\lambda})$$
+
+Note that the subscript $d$ refers to the set of predictor variables (three in our case).
+
+Here $a, y_{\alpha}, z_{\alpha}, y_{\gamma}, z_{\gamma}, y_{\lambda}, z_{\lambda},$ and $\kappa$ are all constant values.
+
+%% TODO: list priors and justification for them
+
+\subsection{Model Fitting Procedure}
+
+The full conditionals for each parameter are conjugate except for the full conditional on $\alpha$. Thus, our MCMC algorithm uses Gibbs samplers for all parameters except for $\alpha$, which uses a Metropolis-Hastings sampler.
+
+In comparing our sampler to one implemented in STAN, we found that our sampler was slightly faster than STAN, %% TODO: do we have hard numbers we could put in here?
+
+Our sampler also converged to similar values for all parameters except for $\sigma^2$. We suspect that the STAN sampler is converging to the correct values as they are closer to the variance of the log of the 36-hour max wind speed. %%TODO: Figure?
+
+\subsection{Prior Dependence Analysis}
+
+To test the goodness of our priors, we swapped the inverse-gamma prior on %%Parameter
+with a half-Cauchy prior with the same hyper parameters and trained on the data. We then calculated the WAIC and LOO-IC for both models using the Python package Arviz. The results are displaced in Table \ref{tab:waic}
+
+\begin{table}
+\centering\begin{tabular}{l|c|c|c|c}
+    Model & WAIC & LOO-IC & P_WAIC & P_LOO \hrule \\
+    Inverse-Gamma & -258.82 & -258.02 & 16.77 & 17.17 \\
+    Half-Cauchy & -268.17 & -267.98 & 12.24 & 12.34\\
+\end{tabular}
+\caption{WAIC and LOO-IC calculations for the two prior cases. Values have been rounded to the nearest hundredth.}
+\label{tab:waic}
+\end{table}
+
+The results suggest that the half-Cauchy prior is marginally better than the Inverse-Gamma prior, both in terms of the WAIC and LOO-IC values and the number of parameters. We can interpret the smaller number of effective parameters from the Half-Cauchy model as a more parsimonious model, which is to be prefered. %% TODO: Do the variables agree?
+
+If we were to extend this analysis, we would consider replacing the distributions on both $\tau$ and $\sigma$ with half-Cauchy distributions. This would require replacing two Gibbs samplers within our MCMC algorithm with MH samplers, which may have unforseen impacts on the length of chains needed for convergence.
 
 \section{Non-Bayesian Analysis}
 Our first non-Bayesian approach to cyclone intensity prediction was a linear regression on storm intensity in the next 24 hours (logVMAX36) using a design matrix that included all of our predictors from the first 12 hours including a one-hot encoding of the storm basin. This is less flexible than our hierarchical model, because it does not allow for features to have different coefficients depending on the basin. The model coefficients are recorded in Table~\ref{tab:reg_coefs}, and the mean squared error and explained variance score for in-sample and out-of-sample data are shown in Table~\ref{tab:reg_scoring}. 
@@ -159,6 +233,8 @@ Out of Sample & 0.045996 & 0.466459 \\
 \end{tabular}
 \end{table}
 
+\section{AI Disclosure}
+Zac acknowledges the use of AI to provide needed syntax and libraries for handling the SHIPS dataset.
 
 % \end{thebibliography}
 \bibliography{refs.bib}
