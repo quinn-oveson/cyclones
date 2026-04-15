@@ -21,5 +21,9 @@ Thumbs.db
 
 # --- Large data files ---
 ibtracs.ALL.list.v04r01.csv
+<<<<<<< HEAD
 posterior_draws/conjugate_stan_model_posterior_draws.csv
 posterior_draws/conjugate_stan_model_posterior_draws.csv
+=======
+data/posterior_draws/conjugate_stan_model_posterior_draws.csv
+>>>>>>> 5b09fdff86f3669542a4fcd905cd4c453abaf3a2
