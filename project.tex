@@ -1,0 +1,166 @@
+
+\documentclass[12pt]{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage{amssymb, amsmath, amsthm}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{wrapfig}
+\usepackage{booktabs}
+\newtheorem{theorem}{Theorem}
+\newtheorem{example}{Example}
+\newgeometry{left = 2cm, right = 2cm}
+
+% the following commands set the size of printed page
+\setlength{\textheight}{680pt} \setlength{\topmargin}{-50pt}
+\setlength{\textwidth}{500pt}
+\setlength{\evensidemargin}{-10pt}
+\setlength{\oddsidemargin}{-10pt}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+
+\title{Stat 651 Project: Cyclone Intensity Prediction}
+\author{Tiara Eddington, Quinn Oveson, Zac Shakespear}
+\date{April 2026}
+
+\maketitle
+
+\section{Introduction}
+
+\section{Dataset Description}
+
+The Statistical Hurricane Intensity Prediction Scheme (SHIPS) is a model produced by the National Hurricane Center (NHC) to forecast the progression of tropical storms in the Atlantic, eastern North Pacific, and central North Pacific basins \cite{ships_dataset}. The dataset used in the development of this model is publicly available. We chose to use this dataset due to its reputability and inclusion of certain helpful features. It contains data for 749 eastern North Pacific, 610 Atlantic, and 57 central North Pacific storms. After filtering by storms that continued for at least 36 hours and had no missing measurements in the features we wished to include, there were 555 eastern North Pacific, 548 Atlantic, and 23 central North Pacific storms remaining.
+
+For the duration of each storm, the dataset reports measurements of climate variables like maximum sustained wind speed (VMAX) and minimum sea pressure (MSLP) at 6 hour intervals. The dataset also includes predictors that have been calculated from atmospheric data. The only such predictor we use in our model is Maximum Potential Intensity (VMPI), which is a function of sea surface temperature (SST) and atmospheric outflow temperature calculated in the method given by Bister and Emmanuel (2002) \cite{bister2002}. From MPI we calculated Intensity Potential (POT) by subtracting the storm’s intensity at 12 hours from its MPI. This feature has been shown to have predictive value \cite{li2018}. We also calculated an approximate intensity gradient from hours 6 to 12 (VGRAD6-12) by subtracting the maximum sustained wind speed at 6 hours from the maximum sustained wind speed at 12 hours and dividing by 6. 
+
+We chose to join the SHIPS dataset with Oceanic Niño Index (ONI) data from the National Weather Service. This index is a three month running average of SST anomalies in the Niño 3.4 region \cite{noaa_oni}. ONI will be interesting to include as a predictor because it is understood to be a positive predictor for cyclone intensity in the central and eastern Pacific basins and a negative predictor for cyclone intensity in the Atlantic basins \cite{bell2014}. The SHIPS dataset reports only the month and year of each storm, so we will predict based on the ONI on the first day of the month of occurrence. 
+
+\section{Non-Bayesian Analysis}
+Our first non-Bayesian approach to cyclone intensity prediction was a linear regression on storm intensity in the next 24 hours (logVMAX36) using a design matrix that included all of our predictors from the first 12 hours including a one-hot encoding of the storm basin. This is less flexible than our hierarchical model, because it does not allow for features to have different coefficients depending on the basin. The model coefficients are recorded in Table~\ref{tab:reg_coefs}, and the mean squared error and explained variance score for in-sample and out-of-sample data are shown in Table~\ref{tab:reg_scoring}. 
+
+compare to MSE and explained variance of our hierarchical Bayesian model here
+
+\begin{table}[h]
+\centering
+\caption{Coefficients of sklearn Linear Regression Model with basins combined}
+\label{tab:reg_coefs}
+\begin{tabular}{lrrrrrrrrr}
+\toprule
+ logVMAX12 & MSLP12 & POT12 & VGRAD0-6 & VGRAD6-12 & AL & CP & ONI \\
+\midrule
+Value & 0.757 & 0.001 & 0.003 & 0.025 & 0.103 & -0.023 & -0.190 & 0.009 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Scoring for sklearn Linear Regression Model with basins combined}
+\label{tab:reg_scoring}
+\begin{tabular}{lrr}
+\toprule
+ & MSE & Explained Variance \\
+\midrule
+In Sample & 0.046211 & 0.419980 \\
+Out of Sample & 0.042612 & 0.427718 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The next approach was to separate the data by basin, then perform a linear regression on storm intensity for each basin independently. This allows for the flexibility of different coefficients for each basin, but it also shrinks the dataset severely, especially for the central North Pacific (CP) basin. The coefficients for the fitted model of each basin are recorded in Table~\ref{tab:basin_reg_coefs}. Notice this model assigned some positive weight to ONI in the CP basin, as well as significantly different intercepts and weights of logVMAX12. However, as shown in Table~\ref{tab:basin_reg_scoring}, the basin-specific models for CP and AL had higher MSE and all three basin-specific models lower explained variance on out-of-sample data than the aggregated model. The reduction in performance was most significant in the basin with the smallest number of storms and least significant in the basin with the largest number of storms. 
+
+\begin{table}[h]
+\centering
+\caption{Coefficients of sklearn Linear Regression Models with basins separated}
+\label{tab:basin_reg_coefs}
+\begin{tabular}{lrrrrrrr}
+\toprule
+ & intercept & logVMAX12 & MSLP12 & POT12 & VGRAD0-6 & VGRAD6-12 & ONI \\
+\midrule
+AL & 7.825 & 0.548 & -0.006 & 0.002 & 0.021 & 0.118 & -0. \\
+EP & -2.181 & 0.805 & 0.003 & 0.004 & 0.029 & 0.105 & -0.000 \\
+CP & 31.618 & 0.555 & -0.030 & 0.001 & 0.158 & 0.238 & 0.013 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Out-of-Sample Scoring for sklearn Linear Regression Model with basins separated}
+\label{tab:basin_reg_scoring}
+\begin{tabular}{lrr}
+\toprule
+ & MSE & Explained Variance \\
+\midrule
+AL & 0.041930 & 0.373190 \\
+EP & 0.045075 & 0.425577 \\
+CP & 0.074657 & 0.210454 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Our next non-Bayesian approach was using a Random Forest Regressor (RFR) on the combined dataset. This model allows for feature effects in different basins to be treated differently when it’s helpful to do so, because the trees can split on the storm basin and subsequently perform other splits. A RFR is theoretically able to capture non-linear correlations between the features and the target. We performed a grid search for the optimal parameters, such as number of trees, loss function (criterion), maximum tree depth, and sample size for training each tree. This model performed similarly or worse than the linear models in terms of MSE and explained variance for out-of-sample data, as seen in Table~\ref{tab:rf_scoring}. This model assigned low but nonzero importances to the basin indicators, with a combined importance of 4.8\% for storm basin. The other importances are recorded in Table~\ref{tab:rf_importances}. This model gave more weight to ONI and POT12 than the previous linear models, which indicates there may be nonlinear correlations between these features and the target. It performed better on in-sample data than out-of-sample, which indicates possible overfit. Attempts to manage overfit by reducing maximum tree depth were not successful. 
+
+compare to MSE and explained variance of our hierarchical Bayesian model here
+
+\begin{table}[h]
+\centering
+\caption{Feature Importances of sklearn Random Forest Regressor with Basin Indicators}
+\label{tab:rf_importances}
+\begin{tabular}{lrrrrrrrrr}
+\toprule
+ & logVMAX12 & MSLP12 & POT12 & VGRAD0-6 & VGRAD6-12 & ONI & AL & CP & EP \\
+\midrule
+Value & 0.423 & 0.085 & 0.129 & 0.048 & 0.190 & 0.074 & 0.008 & 0.012 & 0.031 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Scoring for sklearn Random Forest Regressor with Basin Indicators}
+\label{tab:rf_scoring}
+\begin{tabular}{lrr}
+\toprule
+ & MSE & Explained Variance \\
+\midrule
+In Sample & 0.035999 & 0.562953 \\
+Out of Sample & 0.041517 & 0.349450 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+To investigate whether storm intensity has a continuous spatial dependence, we fit another RFR, removing the basin indicator variable and opting for exact storm latitude and longitude (at $t=0$) from the SHIPS dataset. The explained variance for this model was higher than for any previous models, though it still shows signs of possible overfit since the scoring is worse on out-of-sample data than it is on in-sample data (See Table~\ref{tab:latlon_rf_scoring}). This model assigned weight to both latitude and longitude, with a combined importance of 18.5\% for both spatial variables (See Table~\ref{tab:latlon_rf_importances}). Unfortunately, beyond feature importances, random forests are difficult to interpret, so the exact effect of starting location on storm intensity cannot be easily backed-out of this tree. But the improved performance of this model and the increased weight assigned to spatial components indicate the exact starting location of a cyclone may be more predictive of intensity than the discretized basin representation. 
+
+\begin{table}[h]
+\centering
+\caption{Feature Importances of sklearn Random Forest Regressor with Latitude and Longitude}
+\label{tab:latlon_rf_importances}
+\begin{tabular}{lrrrrrrrr}
+\toprule
+ & logVMAX12 & MSLP12 & POT12 & VGRAD0-6 & VGRAD6-12 & ONI & LAT & LON \\
+\midrule
+Value & 0.414 & 0.045 & 0.071 & 0.01 & 0.227 & 0.047 & 0.077 & 0.108 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Scoring for sklearn Random Forest Regressor with Latitude and Longitude}
+\label{tab:latlon_rf_scoring}
+\begin{tabular}{lrr}
+\toprule
+ & MSE & Explained Variance \\
+\midrule
+In Sample & 0.037331 & 0.514185 \\
+Out of Sample & 0.045996 & 0.466459 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% \end{thebibliography}
+\bibliography{refs.bib}
+\bibliographystyle{alpha}
+\end{document}
