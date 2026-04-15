@@ -59,6 +59,6 @@ model {
 generated quantities {
    vector[N] log_lik;
     for (i in 1:N){
-        log_lik[i] = normal_lpdf(W[i] | all_mu, sqrt(all_sig2));
+        log_lik[i] = normal_lpdf(W[i] | all_mu[i], sqrt(all_sig2[i]));
 }
 }
