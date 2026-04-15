@@ -8,7 +8,7 @@ data {
     array[N] int <lower=0> basins;      // categorical vector, indicates which ocean basin each cyclone is in
 
     // prior parameters
-    real <lower=0> a;                   // shape parameter for inverse-gamma prior on tau2
+    // real <lower=0> a;                   // shape parameter for inverse-gamma prior on tau2
     real <lower=0> y_alpha;             // shape parameter for gamma prior on alpha
     real <lower=0> z_alpha;             // scale parameter for gamma prior on alpha
     real <lower=0> y_gamma;             // shape parameter for gamma prior on gamma
@@ -52,7 +52,7 @@ model {
     for (d in 1:D) {
         Beta[:, d] ~ multi_normal(rep_vector(nu[d], B), diag_matrix(rep_vector(tau2[d], B)));
     }
-    tau ~ cauchy(a, lambda);
+    tau ~ cauchy(0, lambda);     // half cauchy
 
     // hyperpriors
     alpha ~ gamma(y_alpha, 1.0/z_alpha);
@@ -64,6 +64,6 @@ model {
 generated quantities {
     vector[N] log_lik;
     for (i in 1:N){
-        log_lik[i] = normal_lpdf(W[i] | all_mu, sqrt(all_sig2));
+        log_lik[i] = normal_lpdf(W[i] | all_mu[i], sqrt(all_sig2[i]));
 }
 }
