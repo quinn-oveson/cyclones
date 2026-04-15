@@ -43,15 +43,39 @@ We chose to join the SHIPS dataset with Oceanic Niño Index (ONI) data from the 
 \section{Bayesian Model Description}
 
 \subsection{Model Variables}
-We wish to calculate the maximum sustained wind speed from 24 to 60 hours after first measurement. Our predictors are as follows:
+We wish to calculate the maximum sustained wind speed from 12 to 36 hours after first measurement. Our predictors are as follows:
 \begin{enumerate}
-    \item The maximum sustained wind speed from 0 to 24 hours after first measurement.
-    \item The minimum Sea Level Pressure
+    \item The maximum sustained wind speed from 0 to 12 hours after first measurement
+    \item The minimum Sea Level Pressure over the same time period
     \item Maximum potential intensity 
+    \item El Niño Index
+    \item The gradient in the maximum sustained wind speed between 6 hours and 12 hours after first measurement
     \item The basin which the storm develops in
-\end{enumerate}
+    \end{enumerate}
 
-We assume that the basin which the storm develops in will control the parameters governing the model.
+    \begin{frame}{Three Figures in a Row}
+    \begin{figure}
+        \centering
+        \begin{columns}[c]
+            \column{0.32\textwidth}
+                \centering
+                \includegraphics[width=\linewidth]{images/logVMAX12_vs_logVMAX36.png}
+
+            \column{0.32\textwidth}
+                \centering
+                \includegraphics[width=\linewidth]{images/MSLP12_vs_logVMAX36.png}
+
+            \column{0.32\textwidth}
+                \centering
+                \includegraphics[width=\linewidth]{images/VGRAD6-12_vs_logVMAX36.png}
+        \end{columns}
+        \caption{Scatter plots and correlations within the data for: the logarithm of the maximum sustained velocity over the first twelve hours, the minimum sea level pressure over the first welve hours, and the change in the maximum sustained velocity between six and twelve hours.} 
+        \label{fig:three-in-row}
+    \end{figure}
+\end{frame}
+
+
+We assume that the basin which the storm develops in will control the parameters governing the model, rather than being a separate 
 \subsection{Distributions}
 To ensure that the maximum sustained wind speed ($W_i$) is a positive value, we specify the marginal distribution on the log of the wind speed as:
 
