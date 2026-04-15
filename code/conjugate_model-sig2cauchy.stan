@@ -48,7 +48,7 @@ model {
     W ~ normal(all_mu, sqrt(all_sig2));
 
     // priors
-    sig ~ cauchy(alpha, gamma);
+    sig ~ cauchy(alpha, gamma);     // half Cauchy
     for (d in 1:D) {
         Beta[:, d] ~ multi_normal(rep_vector(nu[d], B), diag_matrix(rep_vector(tau2[d], B)));
     }
@@ -64,6 +64,6 @@ model {
 generated quantities {
       vector[N] log_lik;
     for (i in 1:N){
-        log_lik[i] = normal_lpdf(W[i] | all_mu, sqrt(all_sig2));
+        log_lik[i] = normal_lpdf(W[i] | all_mu[i], sqrt(all_sig2[i]));
 }
 }

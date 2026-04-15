@@ -14,35 +14,27 @@ data {
     real <lower=0> y_gamma;             // shape parameter for gamma prior on gamma
     real <lower=0> z_gamma;             // scale parameter for gamma prior on gamma
     real <lower=0> v2;                  // variance for normal prior on nu
-    real <lower=0> y_lambda;            // shape parameter for gamma prior on lambda
-    real <lower=0> z_lambda;            // scale parameter for gamma prior on lambda
+    real <lower=0> m;                   // shape parameter for Half-Cauchy prior on lambda
 }
 
 parameters {
-    //vector <lower=0> [B] sig2;          // wind speed variances for each basin
+    vector <lower=0> [B] sig2;          // wind speed variances for each basin
     matrix[B, D] Beta;                  // regression parameters
-    //vector <lower=0> [D] tau2;          // parameter variances for each predictor
+    vector <lower=0> [D] tau;           // parameter STD for each predictor
     real <lower=0> alpha;               // shape parameter for inverse-gamma prior on sig2
     real <lower=0> gamma;               // scale parameter for inverse-gamma prior on sig2
     vector [D] nu;                      // parameter means for each predictor
     vector <lower=0> [D] lambda;        // scale parameter for inverse-gamma prior on tau2
-    vector <lower=0> [B] sig;
-    vector <lower = 0> [D] tau;
 }
 
 transformed parameters {
    vector[N] all_sig2;
    vector[N] all_mu;
-    vector[B] sig2;
-    vector[D] tau2;
+   vector[D] tau2;
 
-    for(i in 1:B) {
-        sig2[i] = sig[i]^2;
-}
-
-    for(i in 1:D) {
-        tau2[i] = tau[i]^2;
-}
+   for (d in 1:D) {
+    tau2[d] = tau[d]^2;
+   }
 
    for (i in 1:N) {
     all_sig2[i] = sig2[basins[i]];
@@ -55,22 +47,22 @@ model {
     W ~ normal(all_mu, sqrt(all_sig2));
 
     // priors
-    sig ~ cauchy(alpha, gamma);
+    sig2 ~ inv_gamma(alpha, gamma);
     for (d in 1:D) {
         Beta[:, d] ~ multi_normal(rep_vector(nu[d], B), diag_matrix(rep_vector(tau2[d], B)));
     }
-    tau ~ cauchy(a, lambda);
+    tau ~ cauchy(0, lambda);        // half Cauchy
 
     // hyperpriors
     alpha ~ gamma(y_alpha, 1.0/z_alpha);
     gamma ~ gamma(y_gamma, 1.0/z_gamma);
     nu ~ multi_normal(rep_vector(0.0, D), diag_matrix(rep_vector(v2, D)));
-    lambda ~ gamma(y_lambda, 1.0/z_lambda);
+    lambda ~ cauchy(0, m);          // half Cauchy
 }
 
 generated quantities {
       vector[N] log_lik;
-    for (i in 1:N){
-        log_lik[i] = normal_lpdf(W[i] | all_mu, sqrt(all_sig2));
-}
+      for (i in 1:N){
+        log_lik[i] = normal_lpdf(W[i] | all_mu[i], sqrt(all_sig2[i]));
+      }
 }
