@@ -12,12 +12,12 @@ class CycloneSampler:
                 w (ndarray) : log of Maximum Sustained Wind Speed observations for hours 12-60 of each cyclone 
                 X (ndarray) : design matrix, contains predictor variables for each observation 
                 basins (ndarray) : array of ints/indices indicating the ocean basin for each observation
+                a (float) : shape parameter for inverse-gamma prior on tau2
                 y_alpha (float) : shape parameter for gamma hyperprior (must be positive)
                 z_alpha (float) : scale parameter for gamma hyperprior (must be positive)
                 y_gamma (float) : shape parameter for gamma hyperprior (must be positive)
                 z_gamma (float) : scale parameter for gamma hyperprior (must be positive)
-                kappa (float) : variance parameter for multivariate-normal hyperprior (must be positive)
-                omega (float) : scale parameter for half-Cauchy hyperprior (must be positive)
+                v2 (float) : variance parameter for multivariate-normal hyperprior (must be positive)
                 B (int) : the number of unique ocean basins to be modeled
         '''
 
@@ -76,19 +76,7 @@ class CycloneSampler:
                 a = curr_alpha + N_b / 2.,
                 scale = curr_gamma + np.sum((basin_W - basin_mu)**2) / 2.
             )
-    
-        # implement sampler!
-        # new_sig2 = list()
-        # for i in range(len(curr_sig2)):
-        #     basin_w = self.w[self.basins == i]
-        #     basin_x = self.X[self.basins == i]
-        #     N_b = len(basin_data)
-        #     mu = basin_x @ basin_w.T
-        #     sum_vec = (basin_w - mu)**2
-        #     sum_scalar = sum_vec.sum()
-        #     new_sig2.append(stats.invgamma.rvs(curr_alpha + N_b/2, 1/(-curr_gamma + 1/2 * sum_scalar)))
 
-        # new_sig2 = np.array(new_sig2)
         return new_sig2
     
 
@@ -101,32 +89,6 @@ class CycloneSampler:
                 new_Beta (ndarray) : a BxD matrix containing a new draw for regression parameters in each ocean basin
         '''
         curr_sig2, curr_Beta, curr_tau2, curr_alpha, curr_gamma, curr_nu, curr_lam = self.curr_state 
-
-        # these are just placeholders. these need to be tuned
-        # MIN_FEASIBLE_BETA = -5
-        # MAX_FEASIBLE_BETA = 5
-        # res = 300
-
-        # N, B, D = self.N, self.B, self.D
-        # new_Beta = curr_Beta
-
-        # for b in range(B):
-        #     basin_W = self.W[self.basins == b]
-        #     basin_X = self.X[self.basins == b, :]
-        #     basin_log_likelihood_func = lambda beta_vect: -1/(2*curr_sig2[b])*np.sum((basin_W - basin_X@beta_vect)**2)
-        #     def log_likelihood(beta_d, d):
-        #             beta_vect = new_Beta[b, :].copy()
-        #             beta_vect[d] = beta_d
-        #             return basin_log_likelihood_func(beta_vect) - (1/(2*curr_tau2[d]))*((beta_d - curr_nu[d])**2)
-        #     for d in range(D):
-        #         possible_vals = np.linspace(MIN_FEASIBLE_BETA, MAX_FEASIBLE_BETA, res)
-        #         log_likelihoods = np.array([log_likelihood(val, d) for val in possible_vals])
-        #         log_likelihoods -= np.max(log_likelihoods) 
-        #         likelihoods = np.exp(log_likelihoods)
-        #         cdf_vect = np.cumsum(likelihoods) / np.sum(likelihoods) 
-        #         decision_draw = np.random.random()
-        #         possible_vals = possible_vals[cdf_vect > decision_draw]
-        #         new_Beta[b, d] = possible_vals[0]
 
         # conditionally conjugate update:
         new_Beta = np.empty_like(curr_Beta)
@@ -466,13 +428,17 @@ class CycloneDataSimulator:
 
             Parameters:
                 B (int) : number of ocean basins to be modeled
+                a (float) : shape parameter for inverse-gamma prior on tau2
                 y_alpha (float) : shape parameter for gamma hyperprior (must be positive)
                 z_alpha (float) : scale parameter for gamma hyperprior (must be positive)
                 y_gamma (float) : shape parameter for gamma hyperprior (must be positive)
                 z_gamma (float) : scale parameter for gamma hyperprior (must be positive)
-                kappa2 (float) : variance parameter for multivariate-normal hyperprior (must be positive)
-                omega (float) : scale parameter for half-Cauchy hyperprior (must be positive)
+                v2 (float) : variance parameter for multivariate-normal hyperprior (must be positive)
+                y_lam (float) : shape parameter for gamma hyperprior (must be positive)
+                z_lam (float) : scale parameter for gamma hyperprior (must be positive)
                 X (ndarray or None) : matrix of observed predictors 
+                                w (ndarray) : log of Maximum Sustained Wind Speed observations for hours 12-60 of each cyclone 
+                B (int) : the number of unique ocean basins to be modeled
                     **if no X is provided, generate_X() must be called to simulate predictors prior to sampling
                 basins (ndarray) : array of ints/indices indicating the ocean basin for each observation
                     ** if not provided, basins will be specified during sampling and will assume 
@@ -584,12 +550,10 @@ class CycloneDataSimulator:
         self.alpha = stats.gamma.rvs(a=self.y_alpha, scale=self.z_alpha)
         self.gamma = stats.gamma.rvs(a=self.y_gamma, scale=self.z_gamma)
         self.nu = stats.multivariate_normal.rvs(mean=np.zeros(self.D), cov=(self.v2 * np.eye(self.D)))
-        # self.lam = stats.halfcauchy.rvs(loc=0., scale=self.omega, size=self.D)
         self.lam = stats.gamma.rvs(a=self.y_lam, scale=self.z_lam, size=self.D)
 
         # draw from hierarchical priors, save these as attributes 
         self.sig2 = stats.invgamma.rvs(a=self.alpha, scale=self.gamma, size=self.B)
-        # self.tau = stats.halfcauchy.rvs(loc=0., scale=self.lam)
         self.tau2 = stats.invgamma.rvs(a=self.a, scale=self.lam)
         self.Beta = np.vstack(
             [stats.multivariate_normal.rvs(
